@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"github.com/bananalabs-oss/hand/internal/database"
+	"github.com/bananalabs-oss/hand/internal/models"
 	"github.com/bananalabs-oss/hand/internal/router"
 	"github.com/bananalabs-oss/potassium/config"
+	"github.com/bananalabs-oss/potassium/database"
+	"github.com/bananalabs-oss/potassium/server"
 )
 
 func main() {
@@ -37,36 +34,18 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := database.Migrate(ctx, db); err != nil {
+	if err := database.Migrate(ctx, db, []interface{}{
+		(*models.Party)(nil),
+		(*models.PartyMember)(nil),
+	}, []database.Index{
+		{Name: "idx_party_members_unique", Query: "CREATE UNIQUE INDEX IF NOT EXISTS idx_party_members_unique ON party_members (party_id, account_id)"},
+		{Name: "idx_party_members_account", Query: "CREATE UNIQUE INDEX IF NOT EXISTS idx_party_members_account ON party_members (account_id)"},
+	}); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	r := router.Setup(db, jwtSecret, serviceToken)
 
 	addr := fmt.Sprintf("%s:%s", host, port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
-
-	go func() {
-		log.Printf("Hand listening on %s", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Printf("Shutting down Hand...")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
-
-	log.Printf("Hand stopped")
+	server.ListenAndShutdown(addr, r, "Hand")
 }

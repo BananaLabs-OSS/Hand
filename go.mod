@@ -3,12 +3,10 @@ module github.com/bananalabs-oss/hand
 go 1.25.6
 
 require (
-	github.com/bananalabs-oss/potassium v0.5.0
+	github.com/bananalabs-oss/potassium v0.6.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/uptrace/bun v1.2.16
-	github.com/uptrace/bun/dialect/sqlitedialect v1.2.16
-	modernc.org/sqlite v1.46.1
 )
 
 require (
@@ -40,6 +38,7 @@ require (
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
+	github.com/uptrace/bun/dialect/sqlitedialect v1.2.16 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/mock v0.5.0 // indirect
@@ -56,4 +55,5 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	modernc.org/sqlite v1.46.1 // indirect
 )
