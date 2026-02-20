@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bananalabs-oss/hand/internal/models"
+	"github.com/bananalabs-oss/potassium/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
@@ -65,7 +66,7 @@ func (h *Handler) CreateParty(c *gin.Context) {
 
 	_, err := h.findMembership(ctx, accountID)
 	if err == nil {
-		c.JSON(http.StatusConflict, models.ErrorResponse{
+		c.JSON(http.StatusConflict, middleware.ErrorResponse{
 			Error:   "already_in_party",
 			Message: "You are already in a party. Leave first.",
 		})
@@ -99,7 +100,7 @@ func (h *Handler) CreateParty(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "create_failed",
 			Message: "Failed to create party",
 		})
@@ -116,7 +117,7 @@ func (h *Handler) GetMyParty(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "You are not in a party",
 		})
@@ -125,7 +126,7 @@ func (h *Handler) GetMyParty(c *gin.Context) {
 
 	party, err := h.getPartyWithMembers(ctx, member.PartyID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "fetch_failed",
 			Message: "Failed to fetch party",
 		})
@@ -143,7 +144,7 @@ func (h *Handler) JoinParty(c *gin.Context) {
 		InviteCode string `json:"invite_code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "invite_code is required",
 		})
@@ -152,7 +153,7 @@ func (h *Handler) JoinParty(c *gin.Context) {
 
 	_, err := h.findMembership(ctx, accountID)
 	if err == nil {
-		c.JSON(http.StatusConflict, models.ErrorResponse{
+		c.JSON(http.StatusConflict, middleware.ErrorResponse{
 			Error:   "already_in_party",
 			Message: "You are already in a party. Leave first.",
 		})
@@ -166,7 +167,7 @@ func (h *Handler) JoinParty(c *gin.Context) {
 		Where("invite_code = ?", req.InviteCode).
 		Scan(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "invalid_code",
 			Message: "Invalid invite code",
 		})
@@ -174,7 +175,7 @@ func (h *Handler) JoinParty(c *gin.Context) {
 	}
 
 	if len(party.Members) >= party.MaxSize {
-		c.JSON(http.StatusConflict, models.ErrorResponse{
+		c.JSON(http.StatusConflict, middleware.ErrorResponse{
 			Error:   "party_full",
 			Message: "Party is full",
 		})
@@ -190,7 +191,7 @@ func (h *Handler) JoinParty(c *gin.Context) {
 
 	_, err = h.db.NewInsert().Model(member).Exec(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "join_failed",
 			Message: "Failed to join party",
 		})
@@ -207,7 +208,7 @@ func (h *Handler) LeaveParty(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "You are not in a party",
 		})
@@ -224,7 +225,7 @@ func (h *Handler) LeaveParty(c *gin.Context) {
 		Where("party_id = ? AND account_id = ?", member.PartyID, accountID).
 		Exec(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "leave_failed",
 			Message: "Failed to leave party",
 		})
@@ -242,7 +243,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "account_id is required",
 		})
@@ -250,7 +251,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 	}
 
 	if req.AccountID == accountID {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "Cannot kick yourself. Use leave.",
 		})
@@ -259,7 +260,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil || member.Role != models.RoleOwner {
-		c.JSON(http.StatusForbidden, models.ErrorResponse{
+		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
 			Error:   "not_owner",
 			Message: "Only the party owner can kick members",
 		})
@@ -268,7 +269,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 
 	target, err := h.findMembership(ctx, req.AccountID)
 	if err != nil || target.PartyID != member.PartyID {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "That player is not in your party",
 		})
@@ -280,7 +281,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 		Where("party_id = ? AND account_id = ?", member.PartyID, req.AccountID).
 		Exec(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "kick_failed",
 			Message: "Failed to kick member",
 		})
@@ -298,7 +299,7 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "account_id is required",
 		})
@@ -306,7 +307,7 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 	}
 
 	if req.AccountID == accountID {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "You are already the owner",
 		})
@@ -315,7 +316,7 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil || member.Role != models.RoleOwner {
-		c.JSON(http.StatusForbidden, models.ErrorResponse{
+		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
 			Error:   "not_owner",
 			Message: "Only the party owner can transfer ownership",
 		})
@@ -324,7 +325,7 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 
 	target, err := h.findMembership(ctx, req.AccountID)
 	if err != nil || target.PartyID != member.PartyID {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "That player is not in your party",
 		})
@@ -359,7 +360,7 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 		return err
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "transfer_failed",
 			Message: "Failed to transfer ownership",
 		})
@@ -376,7 +377,7 @@ func (h *Handler) DisbandParty(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "You are not in a party",
 		})
@@ -384,7 +385,7 @@ func (h *Handler) DisbandParty(c *gin.Context) {
 	}
 
 	if member.Role != models.RoleOwner {
-		c.JSON(http.StatusForbidden, models.ErrorResponse{
+		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
 			Error:   "not_owner",
 			Message: "Only the party owner can disband",
 		})
@@ -400,7 +401,7 @@ func (h *Handler) RegenerateInvite(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "You are not in a party",
 		})
@@ -408,7 +409,7 @@ func (h *Handler) RegenerateInvite(c *gin.Context) {
 	}
 
 	if member.Role != models.RoleOwner {
-		c.JSON(http.StatusForbidden, models.ErrorResponse{
+		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
 			Error:   "not_owner",
 			Message: "Only the party owner can regenerate invites",
 		})
@@ -423,7 +424,7 @@ func (h *Handler) RegenerateInvite(c *gin.Context) {
 		Where("id = ?", member.PartyID).
 		Exec(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "regenerate_failed",
 			Message: "Failed to regenerate invite code",
 		})
@@ -439,7 +440,7 @@ func (h *Handler) GetPartyByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	partyID, err := uuid.Parse(c.Param("partyId"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_id",
 			Message: "Invalid party ID",
 		})
@@ -448,7 +449,7 @@ func (h *Handler) GetPartyByID(c *gin.Context) {
 
 	party, err := h.getPartyWithMembers(ctx, partyID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_found",
 			Message: "Party not found",
 		})
@@ -462,7 +463,7 @@ func (h *Handler) GetPlayerParty(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, err := uuid.Parse(c.Param("userId"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
 			Error:   "invalid_id",
 			Message: "Invalid user ID",
 		})
@@ -471,7 +472,7 @@ func (h *Handler) GetPlayerParty(c *gin.Context) {
 
 	member, err := h.findMembership(ctx, userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, models.ErrorResponse{
+		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
 			Error:   "not_in_party",
 			Message: "Player is not in a party",
 		})
@@ -480,7 +481,7 @@ func (h *Handler) GetPlayerParty(c *gin.Context) {
 
 	party, err := h.getPartyWithMembers(ctx, member.PartyID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "fetch_failed",
 			Message: "Failed to fetch party",
 		})
@@ -509,7 +510,7 @@ func (h *Handler) disbandParty(c *gin.Context, ctx context.Context, partyID uuid
 		return err
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "disband_failed",
 			Message: "Failed to disband party",
 		})
