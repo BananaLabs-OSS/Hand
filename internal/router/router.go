@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/bananalabs-oss/hand/internal/parties"
-	potassium "github.com/bananalabs-oss/potassium/middleware"
+	"github.com/bananalabs-oss/potassium/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/uptrace/bun"
 )
@@ -20,7 +20,7 @@ func Setup(db *bun.DB, jwtSecret, serviceToken string) *gin.Engine {
 
 	// Player-facing endpoints (JWT auth via Potassium)
 	api := r.Group("/parties")
-	api.Use(potassium.JWTAuth(potassium.JWTConfig{
+	api.Use(middleware.JWTAuth(middleware.JWTConfig{
 		Secret: []byte(jwtSecret),
 	}))
 	{
@@ -36,7 +36,7 @@ func Setup(db *bun.DB, jwtSecret, serviceToken string) *gin.Engine {
 
 	// Internal endpoints (service token auth via Potassium)
 	internal := r.Group("/internal/parties")
-	internal.Use(potassium.ServiceAuth(serviceToken))
+	internal.Use(middleware.ServiceAuth(serviceToken))
 	{
 		internal.GET("/:partyId", h.GetPartyByID)
 		internal.GET("/player/:userId", h.GetPlayerParty)

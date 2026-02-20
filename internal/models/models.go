@@ -35,8 +35,3 @@ type PartyMember struct {
 	Role      string    `bun:"role,notnull"                  json:"role"`
 	JoinedAt  time.Time `bun:"joined_at,nullzero,notnull"    json:"joined_at"`
 }
-
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message,omitempty"`
-}

@@ -12,16 +12,17 @@ import (
 
 	"github.com/bananalabs-oss/hand/internal/database"
 	"github.com/bananalabs-oss/hand/internal/router"
+	"github.com/bananalabs-oss/potassium/config"
 )
 
 func main() {
 	log.Printf("Starting Hand")
 
-	jwtSecret := requireEnv("JWT_SECRET")
-	serviceToken := requireEnv("SERVICE_TOKEN")
-	databaseURL := envOrDefault("DATABASE_URL", "sqlite://hand.db")
-	host := envOrDefault("HOST", "0.0.0.0")
-	port := envOrDefault("PORT", "8003")
+	jwtSecret := config.RequireEnv("JWT_SECRET")
+	serviceToken := config.RequireEnv("SERVICE_TOKEN")
+	databaseURL := config.EnvOrDefault("DATABASE_URL", "sqlite://hand.db")
+	host := config.EnvOrDefault("HOST", "0.0.0.0")
+	port := config.EnvOrDefault("PORT", "8003")
 
 	log.Printf("Hand Configuration:")
 	log.Printf("  Host:     %s", host)
@@ -68,19 +69,4 @@ func main() {
 	}
 
 	log.Printf("Hand stopped")
-}
-
-func requireEnv(key string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		log.Fatalf("%s is required", key)
-	}
-	return val
-}
-
-func envOrDefault(key, fallback string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-	return fallback
 }
