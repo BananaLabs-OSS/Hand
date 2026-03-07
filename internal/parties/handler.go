@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -189,8 +190,26 @@ func (h *Handler) JoinParty(c *gin.Context) {
 		JoinedAt:  time.Now().UTC(),
 	}
 
-	_, err = h.db.NewInsert().Model(member).Exec(ctx)
+	// Use a transaction with a re-check to prevent race condition on concurrent joins
+	err = h.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+		count, err := tx.NewSelect().Model((*models.PartyMember)(nil)).Where("party_id = ?", party.ID).Count(ctx)
+		if err != nil {
+			return err
+		}
+		if count >= party.MaxSize {
+			return fmt.Errorf("party_full")
+		}
+		_, err = tx.NewInsert().Model(member).Exec(ctx)
+		return err
+	})
 	if err != nil {
+		if err.Error() == "party_full" {
+			c.JSON(http.StatusConflict, middleware.ErrorResponse{
+				Error:   "party_full",
+				Message: "Party is full",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
 			Error:   "join_failed",
 			Message: "Failed to join party",
@@ -198,7 +217,14 @@ func (h *Handler) JoinParty(c *gin.Context) {
 		return
 	}
 
-	party, _ = h.getPartyWithMembers(ctx, party.ID)
+	party, err = h.getPartyWithMembers(ctx, party.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
+			Error:   "fetch_failed",
+			Message: "Failed to fetch party",
+		})
+		return
+	}
 	c.JSON(http.StatusOK, party)
 }
 
