@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/BananaLabs-OSS/Fiber v0.0.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/uptrace/bun v1.2.16
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.16
@@ -11,7 +12,6 @@ require (
 )
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
