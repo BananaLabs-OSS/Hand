@@ -1,6 +1,6 @@
 // Tiny helper: prints a JWT signed with the same secret + claim shape
 // Hand's JWTAuth middleware expects. Meant for manual curl testing,
-// not part of the plugin build.
+// not part of the cell build.
 //
 //	go run ./testtools/genjwt -secret dev-jwt-secret-change-me -account 11111111-2222-3333-4444-555555555555
 package main

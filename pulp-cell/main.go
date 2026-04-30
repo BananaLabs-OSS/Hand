@@ -1,6 +1,6 @@
-// Hand — Pulp plugin port.
+// Hand — Pulp cell port.
 //
-// Rewrite of the party-system microservice as a WASM plugin. The HTTP
+// Rewrite of the party-system microservice as a WASM cell. The HTTP
 // shell runs on Fiber's pulpgin router; data access uses Bun over the
 // Fiber pulp/sql driver; JWT + service-token auth come from Fiber's
 // ported Potassium middleware. Handler business logic is unchanged
@@ -49,6 +49,9 @@ func bootstrap(configBytes []byte) error {
 	if err != nil {
 		return fmt.Errorf("open pulp sql driver: %w", err)
 	}
+	// Match host single-writer pool; prevents nested-BEGIN races.
+	raw.SetMaxOpenConns(1)
+	raw.SetMaxIdleConns(1)
 	db = bun.NewDB(raw, sqlitedialect.New())
 
 	if err := migrate(context.Background()); err != nil {

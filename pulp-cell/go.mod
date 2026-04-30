@@ -1,4 +1,4 @@
-module hand-plugin
+module hand-cell
 
 go 1.25
 
