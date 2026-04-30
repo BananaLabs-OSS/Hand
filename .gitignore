@@ -39,3 +39,7 @@ pulp-cell/*.wasm
 pulp-cell/data/
 
 pulp-deployment/pulp.ctl
+pulp-deployment/Hand.exe
+pulp-deployment/hand-deployment.exe
+pulp-deployment/hand-deployment.exe~
+pulp-deployment/data/
