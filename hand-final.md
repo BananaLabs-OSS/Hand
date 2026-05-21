@@ -129,25 +129,25 @@ Cell pins `SetMaxOpenConns(1)` / `SetMaxIdleConns(1)` to match the host single-w
 ## Files Audited
 
 Native:
-- `C:\Users\user\GolandProjects\Hand\cmd\server\main.go`
-- `C:\Users\user\GolandProjects\Hand\internal\models\models.go`
-- `C:\Users\user\GolandProjects\Hand\internal\parties\handler.go`
-- `C:\Users\user\GolandProjects\Hand\internal\router\router.go`
+- `Hand\cmd\server\main.go`
+- `Hand\internal\models\models.go`
+- `Hand\internal\parties\handler.go`
+- `Hand\internal\router\router.go`
 
 Cell:
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\main.go`
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\models.go`
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\handler.go`
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\msgpack.go`
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\pulp.cell.toml`
-- `C:\Users\user\GolandProjects\Hand\pulp-cell\testtools\genjwt\main.go`
+- `Hand\pulp-cell\main.go`
+- `Hand\pulp-cell\models.go`
+- `Hand\pulp-cell\handler.go`
+- `Hand\pulp-cell\msgpack.go`
+- `Hand\pulp-cell\pulp.cell.toml`
+- `Hand\pulp-cell\testtools\genjwt\main.go`
 
 Runtime dependencies cross-checked:
-- `C:\Users\user\GolandProjects\Fiber\pulp\gin\context.go`
-- `C:\Users\user\GolandProjects\Fiber\pulp\gin\gin.go`
-- `C:\Users\user\GolandProjects\Fiber\pulp\gin\middleware\jwt.go`
-- `C:\Users\user\GolandProjects\Potassium\middleware\jwt.go`
-- `C:\Users\user\GolandProjects\Potassium\middleware\response.go`
+- `Fiber\pulp\gin\context.go`
+- `Fiber\pulp\gin\gin.go`
+- `Fiber\pulp\gin\middleware\jwt.go`
+- `Potassium\middleware\jwt.go`
+- `Potassium\middleware\response.go`
 
 ## Fixes Applied
 
