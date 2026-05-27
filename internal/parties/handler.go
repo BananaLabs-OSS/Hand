@@ -30,8 +30,16 @@ func generateInviteCode() string {
 	return hex.EncodeToString(b)
 }
 
-func getAccountID(c *gin.Context) uuid.UUID {
-	return uuid.MustParse(c.GetString("account_id"))
+func getAccountID(c *gin.Context) (uuid.UUID, bool) {
+	parsed, err := uuid.Parse(c.GetString("account_id"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, middleware.ErrorResponse{
+			Error:   "invalid_account",
+			Message: "Invalid account",
+		})
+		return uuid.Nil, false
+	}
+	return parsed, true
 }
 
 func (h *Handler) findMembership(ctx context.Context, accountID uuid.UUID) (*models.PartyMember, error) {
@@ -63,7 +71,10 @@ func (h *Handler) getPartyWithMembers(ctx context.Context, partyID uuid.UUID) (*
 
 func (h *Handler) CreateParty(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	_, err := h.findMembership(ctx, accountID)
 	if err == nil {
@@ -114,7 +125,10 @@ func (h *Handler) CreateParty(c *gin.Context) {
 
 func (h *Handler) GetMyParty(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -139,7 +153,10 @@ func (h *Handler) GetMyParty(c *gin.Context) {
 
 func (h *Handler) JoinParty(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		InviteCode string `json:"invite_code" binding:"required"`
@@ -230,7 +247,10 @@ func (h *Handler) JoinParty(c *gin.Context) {
 
 func (h *Handler) LeaveParty(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -263,7 +283,10 @@ func (h *Handler) LeaveParty(c *gin.Context) {
 
 func (h *Handler) KickMember(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
@@ -319,7 +342,10 @@ func (h *Handler) KickMember(c *gin.Context) {
 
 func (h *Handler) TransferOwnership(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
@@ -393,13 +419,20 @@ func (h *Handler) TransferOwnership(c *gin.Context) {
 		return
 	}
 
-	party, _ := h.getPartyWithMembers(ctx, member.PartyID)
+	party, err := h.getPartyWithMembers(ctx, member.PartyID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": "transferred"})
+		return
+	}
 	c.JSON(http.StatusOK, party)
 }
 
 func (h *Handler) DisbandParty(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -423,7 +456,10 @@ func (h *Handler) DisbandParty(c *gin.Context) {
 
 func (h *Handler) RegenerateInvite(c *gin.Context) {
 	ctx := c.Request.Context()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {

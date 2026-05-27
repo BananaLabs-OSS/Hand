@@ -25,8 +25,16 @@ func generateInviteCode() string {
 	return hex.EncodeToString(b)
 }
 
-func getAccountID(c *pulpgin.Context) uuid.UUID {
-	return uuid.MustParse(c.GetString("account_id"))
+func getAccountID(c *pulpgin.Context) (uuid.UUID, bool) {
+	parsed, err := uuid.Parse(c.GetString("account_id"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, middleware.ErrorResponse{
+			Error:   "invalid_account",
+			Message: "Invalid account",
+		})
+		return uuid.Nil, false
+	}
+	return parsed, true
 }
 
 func (h *Handler) findMembership(ctx context.Context, accountID uuid.UUID) (*PartyMember, error) {
@@ -58,7 +66,10 @@ func (h *Handler) getPartyWithMembers(ctx context.Context, partyID uuid.UUID) (*
 
 func (h *Handler) CreateParty(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	_, err := h.findMembership(ctx, accountID)
 	if err == nil {
@@ -109,7 +120,10 @@ func (h *Handler) CreateParty(c *pulpgin.Context) {
 
 func (h *Handler) GetMyParty(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -134,7 +148,10 @@ func (h *Handler) GetMyParty(c *pulpgin.Context) {
 
 func (h *Handler) JoinParty(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		InviteCode string `json:"invite_code" binding:"required"`
@@ -224,7 +241,10 @@ func (h *Handler) JoinParty(c *pulpgin.Context) {
 
 func (h *Handler) LeaveParty(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -257,7 +277,10 @@ func (h *Handler) LeaveParty(c *pulpgin.Context) {
 
 func (h *Handler) KickMember(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
@@ -313,7 +336,10 @@ func (h *Handler) KickMember(c *pulpgin.Context) {
 
 func (h *Handler) TransferOwnership(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	var req struct {
 		AccountID uuid.UUID `json:"account_id" binding:"required"`
@@ -387,13 +413,20 @@ func (h *Handler) TransferOwnership(c *pulpgin.Context) {
 		return
 	}
 
-	party, _ := h.getPartyWithMembers(ctx, member.PartyID)
+	party, err := h.getPartyWithMembers(ctx, member.PartyID)
+	if err != nil {
+		c.JSON(http.StatusOK, pulpgin.H{"status": "transferred"})
+		return
+	}
 	c.JSON(http.StatusOK, party)
 }
 
 func (h *Handler) DisbandParty(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
@@ -417,7 +450,10 @@ func (h *Handler) DisbandParty(c *pulpgin.Context) {
 
 func (h *Handler) RegenerateInvite(c *pulpgin.Context) {
 	ctx := c.Ctx()
-	accountID := getAccountID(c)
+	accountID, ok := getAccountID(c)
+	if !ok {
+		return
+	}
 
 	member, err := h.findMembership(ctx, accountID)
 	if err != nil {
