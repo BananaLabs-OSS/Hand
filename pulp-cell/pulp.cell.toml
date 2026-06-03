@@ -5,6 +5,7 @@ wasm = "hand.wasm"
 capabilities = [
     "transport.http.inbound",
     "storage.sqlite",
+    "entropy.read",
 ]
 
 [config]

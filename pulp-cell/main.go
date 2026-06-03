@@ -20,6 +20,7 @@ import (
 	"github.com/BananaLabs-OSS/Fiber/pulp"
 	pulpgin "github.com/BananaLabs-OSS/Fiber/pulp/gin"
 	"github.com/BananaLabs-OSS/Fiber/pulp/gin/middleware"
+	_ "github.com/BananaLabs-OSS/Fiber/pulp/entropy/cryptorand" // wires entropy.read into crypto/rand.Reader (wazero defaults random_get to a DETERMINISTIC source; without this, crypto/rand is predictable)
 	_ "github.com/BananaLabs-OSS/Fiber/pulp/sql"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
