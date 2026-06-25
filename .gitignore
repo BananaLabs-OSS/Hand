@@ -36,6 +36,8 @@ go.work.sum
 # .idea/
 # .vscode/
 pulp-cell/*.wasm
+# extensionless cell blobs (WASM compiled without .wasm extension)
+pulp-cell/hand-cell
 pulp-cell/data/
 
 pulp-deployment/pulp.ctl
