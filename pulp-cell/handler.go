@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	dsql "database/sql"
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"net/http"
 	"time"
 
@@ -14,6 +14,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 )
+
+// errPartyFull is the sentinel returned from inside a transaction closure
+// to signal the party-full condition. Using a typed sentinel lets callers
+// distinguish it from real DB errors with errors.Is instead of fragile
+// string comparison.
+var errPartyFull = errors.New("party_full")
 
 type Handler struct {
 	db *bun.DB
@@ -208,13 +214,13 @@ func (h *Handler) JoinParty(c *pulpgin.Context) {
 			return err
 		}
 		if count >= party.MaxSize {
-			return fmt.Errorf("party_full")
+			return errPartyFull
 		}
 		_, err = tx.NewInsert().Model(member).Exec(ctx)
 		return err
 	})
 	if err != nil {
-		if err.Error() == "party_full" {
+		if errors.Is(err, errPartyFull) {
 			c.JSON(http.StatusConflict, middleware.ErrorResponse{
 				Error:   "party_full",
 				Message: "Party is full",
