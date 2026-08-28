@@ -1,0 +1,14 @@
+schema_version = 1
+name = "hand"
+version = "1.0.0"
+require_wasm_sha256 = true
+cells = [
+  "../pulp-cell/party.cell.toml",
+  "../../pulp-engines/party-state-sqlite-cell/pulp.cell.toml",
+  "lua-orchestrator.cell.toml",
+]
+
+[orchestrator]
+manifest = "lua-orchestrator.cell.toml"
+script = "hand.lua"
+sha256 = "621faf8b96d43c26b136609e37cc7e56496f6fc4052d0dc7a6fe51a7f160ab2d"

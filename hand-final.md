@@ -8,7 +8,7 @@ Scope: Exhaustive parity audit of `pulp-cell/` against native `cmd/server/` + `i
 **0 gaps.** Pulp-cell is byte-level behaviorally equivalent to the native Hand service for every endpoint, every error path, every transaction boundary, every response shape. Both targets compile clean.
 
 - Native build: `go build ./...` clean
-- Cell build: `GOOS=wasip1 GOARCH=wasm go build -o hand.wasm .` clean
+- API adapter build: `GOOS=wasip1 GOARCH=wasm go build -trimpath -buildmode=c-shared -o party.wasm .` clean
 
 ## Hunt Pattern Results
 

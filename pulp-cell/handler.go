@@ -1,28 +1,23 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
-	dsql "database/sql"
 	"encoding/hex"
-	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	pulpgin "github.com/BananaLabs-OSS/Fiber/pulp/gin"
 	"github.com/BananaLabs-OSS/Fiber/pulp/gin/middleware"
+	"github.com/BananaLabs-OSS/Fiber/pulp/workflow"
+	"github.com/SirNiklas9/pulp-engines/party-state-sqlite-cell/partyowner"
 	"github.com/google/uuid"
-	"github.com/uptrace/bun"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
-// errPartyFull is the sentinel returned from inside a transaction closure
-// to signal the party-full condition. Using a typed sentinel lets callers
-// distinguish it from real DB errors with errors.Is instead of fragile
-// string comparison.
-var errPartyFull = errors.New("party_full")
-
-type Handler struct {
-	db *bun.DB
+type Handler struct{ client *workflow.Client }
+type partyReply struct {
+	ResponseMsgpack []byte `msgpack:"response_msgpack"`
 }
 
 func generateInviteCode() string {
@@ -30,554 +25,158 @@ func generateInviteCode() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
-
 func getAccountID(c *pulpgin.Context) (uuid.UUID, bool) {
-	parsed, err := uuid.Parse(c.GetString("account_id"))
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, middleware.ErrorResponse{
-			Error:   "invalid_account",
-			Message: "Invalid account",
-		})
+	id, e := uuid.Parse(c.GetString("account_id"))
+	if e != nil {
+		c.JSON(401, middleware.ErrorResponse{Error: "invalid_account", Message: "Invalid account"})
 		return uuid.Nil, false
 	}
-	return parsed, true
+	return id, true
 }
-
-func (h *Handler) findMembership(ctx context.Context, accountID uuid.UUID) (*PartyMember, error) {
-	member := new(PartyMember)
-	err := h.db.NewSelect().
-		Model(member).
-		Where("account_id = ?", accountID).
-		Scan(ctx)
+func partyCommandID(c *pulpgin.Context, op string) string {
+	return fmt.Sprintf("%s:http-%d", op, c.Request().ID)
+}
+func (h *Handler) call(event string, request, output any) *partyowner.Error {
+	wire, err := msgpack.Marshal(request)
 	if err != nil {
-		return nil, err
+		return &partyowner.Error{Code: "unavailable", Message: err.Error()}
 	}
-	return member, nil
-}
-
-func (h *Handler) getPartyWithMembers(ctx context.Context, partyID uuid.UUID) (*Party, error) {
-	party := new(Party)
-	err := h.db.NewSelect().
-		Model(party).
-		Relation("Members").
-		Where("p.id = ?", partyID).
-		Scan(ctx)
+	result, err := h.client.Dispatch(workflow.DispatchRequest{Event: event, Payload: map[string]any{"request_msgpack": wire}})
 	if err != nil {
-		return nil, err
+		return &partyowner.Error{Code: "unavailable", Message: err.Error()}
 	}
-	return party, nil
+	reply, err := workflow.DecodeValue[partyReply](result)
+	if err != nil {
+		return &partyowner.Error{Code: "unavailable", Message: err.Error()}
+	}
+	if err = msgpack.Unmarshal(reply.ResponseMsgpack, output); err != nil {
+		return &partyowner.Error{Code: "unavailable", Message: err.Error()}
+	}
+	return nil
 }
-
-// --- Player-facing endpoints ---
+func partyFailure(c *pulpgin.Context, e *partyowner.Error) {
+	status := 409
+	if e.Code == "invalid_request" {
+		status = 400
+	}
+	if e.Code == "not_owner" {
+		status = 403
+	}
+	if e.Code == "not_found" || e.Code == "not_in_party" || e.Code == "invalid_code" {
+		status = 404
+	}
+	if e.Code == "unavailable" {
+		status = 500
+	}
+	c.JSON(status, middleware.ErrorResponse{Error: e.Code, Message: e.Message})
+}
+func partyResult[T any](c *pulpgin.Context, h *Handler, event string, request any, status int) {
+	var result partyowner.Result[T]
+	if e := h.call(event, request, &result); e != nil {
+		partyFailure(c, e)
+		return
+	}
+	if result.Error != nil {
+		partyFailure(c, result.Error)
+		return
+	}
+	c.JSON(status, result.Value)
+}
 
 func (h *Handler) CreateParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	_, err := h.findMembership(ctx, accountID)
-	if err == nil {
-		c.JSON(http.StatusConflict, middleware.ErrorResponse{
-			Error:   "already_in_party",
-			Message: "You are already in a party. Leave first.",
-		})
-		return
-	}
-
-	now := time.Now().UTC()
-	party := &Party{
-		ID:         uuid.New(),
-		OwnerID:    accountID,
-		InviteCode: generateInviteCode(),
-		MaxSize:    DefaultMaxSize,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-
-	member := &PartyMember{
-		PartyID:   party.ID,
-		AccountID: accountID,
-		Role:      RoleOwner,
-		JoinedAt:  now,
-	}
-
-	err = h.db.RunInTx(ctx, &dsql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
-		if _, err := tx.NewInsert().Model(party).Exec(ctx); err != nil {
-			return err
-		}
-		if _, err := tx.NewInsert().Model(member).Exec(ctx); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "create_failed",
-			Message: "Failed to create party",
-		})
-		return
-	}
-
-	party.Members = []PartyMember{*member}
-	c.JSON(http.StatusCreated, party)
+	partyResult[partyowner.Party](c, h, "hand.party.create.v1", partyowner.CreateRequest{RequestID: partyCommandID(c, "create"), PartyID: uuid.New(), OwnerID: a, InviteCode: generateInviteCode(), MaxSize: partyowner.DefaultMaxSize, NowUnixMS: time.Now().UTC().UnixMilli()}, 201)
 }
-
 func (h *Handler) GetMyParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "You are not in a party",
-		})
-		return
-	}
-
-	party, err := h.getPartyWithMembers(ctx, member.PartyID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "fetch_failed",
-			Message: "Failed to fetch party",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, party)
+	partyResult[partyowner.Party](c, h, "hand.party.get-for-player.v1", partyowner.GetForPlayerRequest{AccountID: a}, 200)
 }
-
 func (h *Handler) JoinParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	var req struct {
+	var in struct {
 		InviteCode string `json:"invite_code" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "invite_code is required",
-		})
+	if c.ShouldBindJSON(&in) != nil {
+		c.JSON(400, middleware.ErrorResponse{Error: "invalid_request", Message: "invite_code is required"})
 		return
 	}
-
-	_, err := h.findMembership(ctx, accountID)
-	if err == nil {
-		c.JSON(http.StatusConflict, middleware.ErrorResponse{
-			Error:   "already_in_party",
-			Message: "You are already in a party. Leave first.",
-		})
-		return
-	}
-
-	party := new(Party)
-	err = h.db.NewSelect().
-		Model(party).
-		Relation("Members").
-		Where("invite_code = ?", req.InviteCode).
-		Scan(ctx)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "invalid_code",
-			Message: "Invalid invite code",
-		})
-		return
-	}
-
-	if len(party.Members) >= party.MaxSize {
-		c.JSON(http.StatusConflict, middleware.ErrorResponse{
-			Error:   "party_full",
-			Message: "Party is full",
-		})
-		return
-	}
-
-	member := &PartyMember{
-		PartyID:   party.ID,
-		AccountID: accountID,
-		Role:      RoleMember,
-		JoinedAt:  time.Now().UTC(),
-	}
-
-	err = h.db.RunInTx(ctx, &dsql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
-		count, err := tx.NewSelect().Model((*PartyMember)(nil)).Where("party_id = ?", party.ID).Count(ctx)
-		if err != nil {
-			return err
-		}
-		if count >= party.MaxSize {
-			return errPartyFull
-		}
-		_, err = tx.NewInsert().Model(member).Exec(ctx)
-		return err
-	})
-	if err != nil {
-		if errors.Is(err, errPartyFull) {
-			c.JSON(http.StatusConflict, middleware.ErrorResponse{
-				Error:   "party_full",
-				Message: "Party is full",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "join_failed",
-			Message: "Failed to join party",
-		})
-		return
-	}
-
-	party, err = h.getPartyWithMembers(ctx, party.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "fetch_failed",
-			Message: "Failed to fetch party",
-		})
-		return
-	}
-	c.JSON(http.StatusOK, party)
+	partyResult[partyowner.Party](c, h, "hand.party.join.v1", partyowner.JoinRequest{RequestID: partyCommandID(c, "join"), AccountID: a, InviteCode: in.InviteCode, NowUnixMS: time.Now().UTC().UnixMilli()}, 200)
 }
-
 func (h *Handler) LeaveParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "You are not in a party",
-		})
-		return
-	}
-
-	if member.Role == RoleOwner {
-		h.disbandParty(c, ctx, member.PartyID)
-		return
-	}
-
-	_, err = h.db.NewDelete().
-		Model((*PartyMember)(nil)).
-		Where("party_id = ? AND account_id = ?", member.PartyID, accountID).
-		Exec(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "leave_failed",
-			Message: "Failed to leave party",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, pulpgin.H{"message": "Left party"})
+	partyResult[partyowner.Ack](c, h, "hand.party.leave.v1", partyowner.PlayerCommand{RequestID: partyCommandID(c, "leave"), AccountID: a}, 200)
 }
-
+func targetInput(c *pulpgin.Context) (uuid.UUID, bool) {
+	var in struct {
+		AccountID uuid.UUID `json:"account_id" binding:"required"`
+	}
+	if c.ShouldBindJSON(&in) != nil {
+		c.JSON(400, middleware.ErrorResponse{Error: "invalid_request", Message: "account_id is required"})
+		return uuid.Nil, false
+	}
+	return in.AccountID, true
+}
 func (h *Handler) KickMember(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	var req struct {
-		AccountID uuid.UUID `json:"account_id" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "account_id is required",
-		})
+	target, ok := targetInput(c)
+	if !ok {
 		return
 	}
-
-	if req.AccountID == accountID {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "Cannot kick yourself. Use leave.",
-		})
-		return
-	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil || member.Role != RoleOwner {
-		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
-			Error:   "not_owner",
-			Message: "Only the party owner can kick members",
-		})
-		return
-	}
-
-	target, err := h.findMembership(ctx, req.AccountID)
-	if err != nil || target.PartyID != member.PartyID {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "That player is not in your party",
-		})
-		return
-	}
-
-	_, err = h.db.NewDelete().
-		Model((*PartyMember)(nil)).
-		Where("party_id = ? AND account_id = ?", member.PartyID, req.AccountID).
-		Exec(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "kick_failed",
-			Message: "Failed to kick member",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, pulpgin.H{"message": "Member kicked"})
+	partyResult[partyowner.Ack](c, h, "hand.party.kick.v1", partyowner.OwnerTargetCommand{RequestID: partyCommandID(c, "kick"), OwnerID: a, TargetID: target}, 200)
 }
-
 func (h *Handler) TransferOwnership(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	var req struct {
-		AccountID uuid.UUID `json:"account_id" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "account_id is required",
-		})
+	target, ok := targetInput(c)
+	if !ok {
 		return
 	}
-
-	if req.AccountID == accountID {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "You are already the owner",
-		})
-		return
-	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil || member.Role != RoleOwner {
-		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
-			Error:   "not_owner",
-			Message: "Only the party owner can transfer ownership",
-		})
-		return
-	}
-
-	target, err := h.findMembership(ctx, req.AccountID)
-	if err != nil || target.PartyID != member.PartyID {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "That player is not in your party",
-		})
-		return
-	}
-
-	err = h.db.RunInTx(ctx, &dsql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewUpdate().
-			Model((*PartyMember)(nil)).
-			Set("role = ?", RoleMember).
-			Where("party_id = ? AND account_id = ?", member.PartyID, accountID).
-			Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.NewUpdate().
-			Model((*PartyMember)(nil)).
-			Set("role = ?", RoleOwner).
-			Where("party_id = ? AND account_id = ?", member.PartyID, req.AccountID).
-			Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.NewUpdate().
-			Model((*Party)(nil)).
-			Set("owner_id = ?", req.AccountID).
-			Set("updated_at = ?", time.Now().UTC()).
-			Where("id = ?", member.PartyID).
-			Exec(ctx)
-		return err
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "transfer_failed",
-			Message: "Failed to transfer ownership",
-		})
-		return
-	}
-
-	party, err := h.getPartyWithMembers(ctx, member.PartyID)
-	if err != nil {
-		c.JSON(http.StatusOK, pulpgin.H{"status": "transferred"})
-		return
-	}
-	c.JSON(http.StatusOK, party)
+	partyResult[partyowner.Party](c, h, "hand.party.transfer.v1", partyowner.OwnerTargetCommand{RequestID: partyCommandID(c, "transfer"), OwnerID: a, TargetID: target, NowUnixMS: time.Now().UTC().UnixMilli()}, 200)
 }
-
 func (h *Handler) DisbandParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "You are not in a party",
-		})
-		return
-	}
-
-	if member.Role != RoleOwner {
-		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
-			Error:   "not_owner",
-			Message: "Only the party owner can disband",
-		})
-		return
-	}
-
-	h.disbandParty(c, ctx, member.PartyID)
+	partyResult[partyowner.Ack](c, h, "hand.party.disband.v1", partyowner.OwnerCommand{RequestID: partyCommandID(c, "disband"), OwnerID: a}, 200)
 }
-
 func (h *Handler) RegenerateInvite(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	accountID, ok := getAccountID(c)
+	a, ok := getAccountID(c)
 	if !ok {
 		return
 	}
-
-	member, err := h.findMembership(ctx, accountID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "You are not in a party",
-		})
-		return
-	}
-
-	if member.Role != RoleOwner {
-		c.JSON(http.StatusForbidden, middleware.ErrorResponse{
-			Error:   "not_owner",
-			Message: "Only the party owner can regenerate invites",
-		})
-		return
-	}
-
-	newCode := generateInviteCode()
-	_, err = h.db.NewUpdate().
-		Model((*Party)(nil)).
-		Set("invite_code = ?", newCode).
-		Set("updated_at = ?", time.Now().UTC()).
-		Where("id = ?", member.PartyID).
-		Exec(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "regenerate_failed",
-			Message: "Failed to regenerate invite code",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, pulpgin.H{"invite_code": newCode})
+	partyResult[partyowner.Invite](c, h, "hand.party.invite.rotate.v1", partyowner.RotateInviteRequest{RequestID: partyCommandID(c, "invite"), OwnerID: a, InviteCode: generateInviteCode(), NowUnixMS: time.Now().UTC().UnixMilli()}, 200)
 }
-
-// --- Internal endpoints (service-to-service) ---
-
 func (h *Handler) GetPartyByID(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	partyID, err := uuid.Parse(c.Param("partyId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_id",
-			Message: "Invalid party ID",
-		})
+	id, e := uuid.Parse(c.Param("partyId"))
+	if e != nil {
+		c.JSON(400, middleware.ErrorResponse{Error: "invalid_id", Message: "Invalid party ID"})
 		return
 	}
-
-	party, err := h.getPartyWithMembers(ctx, partyID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_found",
-			Message: "Party not found",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, party)
+	partyResult[partyowner.Party](c, h, "hand.party.get.v1", partyowner.GetRequest{PartyID: id}, http.StatusOK)
 }
-
 func (h *Handler) GetPlayerParty(c *pulpgin.Context) {
-	ctx := c.Ctx()
-	userID, err := uuid.Parse(c.Param("userId"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, middleware.ErrorResponse{
-			Error:   "invalid_id",
-			Message: "Invalid user ID",
-		})
+	id, e := uuid.Parse(c.Param("userId"))
+	if e != nil {
+		c.JSON(400, middleware.ErrorResponse{Error: "invalid_id", Message: "Invalid user ID"})
 		return
 	}
-
-	member, err := h.findMembership(ctx, userID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, middleware.ErrorResponse{
-			Error:   "not_in_party",
-			Message: "Player is not in a party",
-		})
-		return
-	}
-
-	party, err := h.getPartyWithMembers(ctx, member.PartyID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "fetch_failed",
-			Message: "Failed to fetch party",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, party)
-}
-
-// --- Helpers ---
-
-func (h *Handler) disbandParty(c *pulpgin.Context, ctx context.Context, partyID uuid.UUID) {
-	err := h.db.RunInTx(ctx, &dsql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewDelete().
-			Model((*PartyMember)(nil)).
-			Where("party_id = ?", partyID).
-			Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.NewDelete().
-			Model((*Party)(nil)).
-			Where("id = ?", partyID).
-			Exec(ctx)
-		return err
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, middleware.ErrorResponse{
-			Error:   "disband_failed",
-			Message: "Failed to disband party",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, pulpgin.H{"message": "Party disbanded"})
+	partyResult[partyowner.Party](c, h, "hand.party.get-for-player.v1", partyowner.GetForPlayerRequest{AccountID: id}, 200)
 }

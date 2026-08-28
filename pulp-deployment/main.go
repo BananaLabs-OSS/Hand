@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "github.com/BananaLabs-OSS/Pulp-ext-entropy"
 	_ "github.com/BananaLabs-OSS/Pulp-ext-http"
 	_ "github.com/BananaLabs-OSS/Pulp-ext-sqlite"
 

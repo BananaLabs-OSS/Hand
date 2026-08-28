@@ -1,0 +1,17 @@
+name = "hand-api"
+version = "1.0.0"
+wasm = "party.wasm"
+wasm_sha256 = "590ac781931ad4cabb2a9903f7f177fe996829647235adae1dae624de98a025e"
+
+provides = []
+consumes = ["orchestrator.dispatch"]
+depends_on = ["lua-orchestrator"]
+
+capabilities = [
+    "transport.http.inbound",
+    "entropy.read",
+]
+
+[config]
+jwt_secret = "dev-jwt-secret-change-me"
+service_token = "dev-service-token-change-me"
