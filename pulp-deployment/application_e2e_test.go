@@ -121,7 +121,7 @@ func buildPartyWASM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve party WASM output: %v", err)
 	}
-	command := exec.Command("go", "build", "-trimpath", "-buildmode=c-shared", "-o", output, ".")
+	command := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-buildmode=c-shared", "-o", output, ".")
 	command.Dir = cellDir
 	command.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	if output, err := command.CombinedOutput(); err != nil {
@@ -133,7 +133,7 @@ func buildPartyWASM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve Pulp-Lua WASM output: %v", err)
 	}
-	luaCommand := exec.Command("go", "build", "-trimpath", "-buildmode=c-shared", "-o", luaOutput, "./pulp-cell")
+	luaCommand := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-buildmode=c-shared", "-o", luaOutput, "./pulp-cell")
 	luaCommand.Dir = luaRoot
 	luaCommand.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 	if output, err := luaCommand.CombinedOutput(); err != nil {

@@ -45,3 +45,10 @@ pulp-deployment/Hand.exe
 pulp-deployment/hand-deployment.exe
 pulp-deployment/hand-deployment.exe~
 pulp-deployment/data/
+
+# Local agent tooling
+/.claude/
+/.codegraph/
+/.codex/
+/.mcp.json
+/CLAUDE.md
