@@ -1,7 +1,7 @@
 name = "hand-api"
 version = "1.0.0"
 wasm = "party.wasm"
-wasm_sha256 = "590ac781931ad4cabb2a9903f7f177fe996829647235adae1dae624de98a025e"
+wasm_sha256 = "d902c2e03941773ad8d11520b7cf8f9f7adbd5981c704691dce8be59ae75b870"
 
 provides = []
 consumes = ["orchestrator.dispatch"]

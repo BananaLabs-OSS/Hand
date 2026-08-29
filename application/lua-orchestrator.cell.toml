@@ -1,7 +1,7 @@
 name = "lua-orchestrator"
 version = "1.0.0"
 wasm = "lua-orchestrator.wasm"
-wasm_sha256 = "d287d2d93e09b02830ddf53f42e398b9c5ec49558e338b18e1b4c18d298c8006"
+wasm_sha256 = "d56edb0893723f758b1087ee6ba749379640d9efc41a0d08df453a5872f98ef5"
 
 provides = [
   "orchestrator.dispatch",
